@@ -95,6 +95,32 @@ void WindowManager::Run() {
     case ConfigureRequest:
       OnConfigureRequest(e.xconfigurerequest);
       break;
+
+    case ButtonPress:
+      OnButtonPress(e.xbutton);
+      break;
+
+    case ButtonRelease:
+      OnButtonRelease(e.xbutton);
+      break;
+
+    case MotionNotify:
+
+      // Skip any pending motion events
+      while (XCheckTypedWindowEvent(display_, e.xmotion.window, MotionNotify,
+                                    &e)) {
+      }
+      OnMotionNotify(e.xmotion);
+
+      break;
+
+    case KeyPress:
+      OnKeyPress(e.xkey);
+      break;
+    case KeyRelease:
+      OnKeyRelease(e.xkey);
+      break;
+
     default:
       LOG(WARNING) << "Ignored event" << window_utils::ToString(e);
     }
@@ -160,6 +186,28 @@ void WindowManager::OnMapRequest(const XMapRequestEvent &e) {
 
   XMapWindow(display_, e.window);
 }
+
+void WindowManager::OnButtonPress(const XButtonEvent &e) {
+  CHECK(clients_.count(e.window));
+  const Window frame = clients_[e.window];
+
+  // initial cursor position
+  drag_start_position_ = window_utils::Position<int>(e.x_root, e.y_root);
+  // Saving the initial window information
+  Window returned_root;
+  int x, y;
+  unsigned int width, height, border_width, depth;
+  CHECK(XGetGeometry(display_, frame, &returned_root, &x, &y, &width, &height,
+                     &border_width, &depth));
+
+  drag_start_frame_position_ = window_utils::Position<int>(x, y);
+  drag_start_frame_size_ = window_utils::Size<int>(width, height);
+
+  // Raise the clicked window to the top
+
+  XRaiseWindow(display_, frame);
+}
+
 void WindowManager::Frame(Window w, bool was_created_before_window_manager) {
   const unsigned int BORDER_WIDTH = 4;
   const unsigned long BORDER_COLOR = 0xff0000;
@@ -237,6 +285,7 @@ void WindowManager::UnFrame(Window w) {
 
   LOG(INFO) << "Unframed window" << w << " [" << frame << "]";
 }
+
 int WindowManager::onWmDetected(Display *display, XErrorEvent *e) {
   // If we have an already running wm, the error code from XselectInput is
   // BadAccess. We do not expect this handler to receive any other errors.

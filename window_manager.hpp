@@ -1,3 +1,4 @@
+#include "event_utils.hpp"
 #include <X11/X.h>
 #include <X11/keysym.h>
 #include <unordered_map>
@@ -35,6 +36,12 @@ private:
   void OnMapRequest(const XMapRequestEvent &e);
   void OnReparentNotify(const XReparentEvent &e);
   void OnDestroyNotify(const XDestroyWindowEvent &e);
+  void OnButtonPress(const XButtonEvent &e);
+  void OnButtonRelease(const XButtonEvent &e);
+  void OnMotionNotify(const XMotionEvent &e);
+  void OnKeyPress(const XKeyPressedEvent &e);
+  void OnKeyRelease(const XKeyReleasedEvent &e);
+
   // Helper functions
   void Frame(Window w, bool was_created_before_window_manager);
   void UnFrame(Window w); // Xlib error handler. Must be static as its address
@@ -46,4 +53,13 @@ private:
   static int onWmDetected(Display *display, XErrorEvent *e);
   // Whether an existing window manager was detected set by onWmDetected
   static bool wm_detected_;
+
+  // The cursor position at the start of a window move/resize operation
+  window_utils::Position<int> drag_start_position_;
+
+  // The position of the affected window at the start of a window move/resize
+  window_utils::Position<int> drag_start_frame_position_;
+
+  // The size of the affected window at the start of a move or resize
+  window_utils::Size<int> drag_start_frame_size_;
 };
