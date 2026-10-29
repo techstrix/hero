@@ -1,0 +1,6 @@
+
+
+CompileFlags:
+  Add:
+    - -DGLOG_USE_GLOG_EXPORT
+    - -std=c++20

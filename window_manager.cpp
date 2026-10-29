@@ -1,0 +1,198 @@
+#include "window_manager.hpp"
+#include "event_utils.hpp"
+#include <X11/X.h>
+#include <X11/Xlib.h>
+#include <glog/logging.h>
+#include <memory>
+
+std::unique_ptr<WindowManager> WindowManager::Create() {
+
+  Display *display = XOpenDisplay(nullptr);
+  if (display == nullptr) {
+    LOG(ERROR) << "Failed to open X display" << XDisplayName(nullptr);
+    return nullptr;
+  }
+
+  return std::unique_ptr<WindowManager>(new WindowManager(display));
+}
+
+WindowManager::WindowManager(Display *display)
+    : display_(display), root_(DefaultRootWindow(display_)) {}
+
+WindowManager::~WindowManager() { XCloseDisplay(display_); }
+
+void WindowManager::Run() {
+  // Initialization
+  //  Selection of events on root window. We use a special error handler to exit
+  //  gracefully if another wm is running.
+  wm_detected_ = false;
+  XSetErrorHandler(&WindowManager::onWmDetected);
+  XSelectInput(display_, root_,
+               SubstructureRedirectMask | SubstructureNotifyMask);
+  XSync(display_, false);
+
+  if (wm_detected_) {
+    LOG(ERROR) << "Detected another window manager on display"
+               << XDisplayString(display_);
+    return;
+  }
+  XSetErrorHandler(&WindowManager::OnXError);
+
+  // Main  event loop
+  for (;;) {
+    // Get the next even
+    XEvent e;
+    XNextEvent(display_, &e);
+    LOG(INFO) << "Received event: " << window_utils::ToString(e);
+
+    // Dispatch our events
+    switch (e.type) {
+    case CreateNotify:
+      OnCreateNotify(e.xcreatewindow);
+      break;
+
+    case DestroyNotify:
+      OnDestroyNotify(e.xdestroywindow);
+      break;
+    case ReparentNotify:
+      OnReparentNotify(e.xreparent);
+      break;
+
+    case ConfigureNotify:
+      OnConfigureNotify(e.xconfigure);
+      break;
+    case UnmapNotify:
+      OnUnmapNotify(e.xunmap);
+      break;
+
+    case MapRequest:
+      OnMapRequest(e.xmaprequest);
+      break;
+    case ConfigureRequest:
+      OnConfigureRequest(e.xconfigurerequest);
+
+    default:
+      LOG(WARNING) << "Ignored event" << window_utils::ToString(e);
+    }
+  }
+}
+void WindowManager::OnCreateNotify(const XCreateWindowEvent &e) {}
+void WindowManager::OnConfigureNotify(const XConfigureEvent &e) {}
+void WindowManager::OnUnmapNotify(const XUnmapEvent &e) {
+  // Check if window is client window we manage so that we can unframe it upon
+  // unmap notify. We will receive an unmap notify request for a client window
+  // we destroyed ourselves
+  if (!clients_.count(e.window)) {
+    LOG(INFO) << "Ignore unmap notify for non-client window" << e.window;
+    return;
+  }
+
+  UnFrame(e.window);
+}
+
+void WindowManager::OnConfigureRequest(const XConfigureRequestEvent &e) {
+
+  XWindowChanges changes;
+
+  changes.x = e.x;
+  changes.y = e.y;
+  changes.width = e.width;
+  changes.height = e.height;
+  changes.border_width = e.border_width;
+  changes.sibling = e.above;
+  changes.stack_mode = e.detail;
+
+  if (clients_.count(e.window)) {
+    const Window frame = clients_[e.window];
+    XConfigureWindow(display_, frame, e.value_mask, &changes);
+    LOG(INFO) << "Resize [" << frame << "]" << "to"
+              << window_utils::Size<int>(e.width, e.height);
+  }
+
+  // Grant the request
+  XConfigureWindow(display_, e.window, e.value_mask, &changes);
+  LOG(INFO) << "Resize " << e.window << " to "
+            << window_utils::Size<int>(e.width, e.height);
+}
+
+void WindowManager::OnMapRequest(const XMapRequestEvent &e) {
+  Frame(e.window);
+
+  XMapWindow(display_, e.window);
+}
+void WindowManager::Frame(Window w) {
+  const unsigned int BORDER_WIDTH = 4;
+  const unsigned long BORDER_COLOR = 0xff0000;
+  const unsigned int BG_COLOR = 0x0000ff;
+  // Retrieve window Attributes to our Frame
+
+  XWindowAttributes x_window_attrs;
+  CHECK(XGetWindowAttributes(display_, w, &x_window_attrs));
+
+  // Frame creation
+
+  const Window frame = XCreateSimpleWindow(
+      display_, root_, x_window_attrs.x, x_window_attrs.y, x_window_attrs.width,
+      x_window_attrs.height, BORDER_WIDTH, BORDER_COLOR, BG_COLOR);
+
+  // SELECT events on frame
+  XSelectInput(display_, frame,
+               SubstructureRedirectMask | SubstructureNotifyMask);
+  // Add client to save set so that it will be restored and kept alive incase of
+  // a crash
+  XAddToSaveSet(display_, w);
+
+  // Reparent the client window to the frame
+  //  (0,0) offset of client window within the frame
+  XReparentWindow(display_, w, frame, 0, 0);
+  // Map frame onto display
+  XMapWindow(display_, frame);
+
+  clients_[w] = frame;
+  // Grab events for window managament actions on client windows
+
+  // a. Move windows with alt+left btn
+  XGrabButton(display_, Button1, Mod1Mask, w, false,
+              ButtonPressMask | ButtonReleaseMask | ButtonMotionMask,
+              GrabModeAsync, GrabModeAsync, None, None);
+
+  // b. Move windows with alt+right btn
+
+  XGrabButton(display_, Button3, Mod1Mask, w, false,
+              ButtonPressMask | ButtonReleaseMask | ButtonMotionMask,
+              GrabModeAsync, GrabModeAsync, None, None);
+
+  // c. kill windows with alt+f4
+
+  XGrabKey(display_, XKeysymToKeycode(display_, XK_F4), Mod1Mask, w, false,
+           GrabModeAsync, GrabModeAsync);
+
+  // d. Switch windows with alt+tab
+  XGrabKey(display_, XKeysymToKeycode(display_, XK_Tab), Mod1Mask, w, false,
+           GrabModeAsync, GrabModeAsync);
+
+  LOG(INFO) << "Framed window " << w << " [" << frame << "]";
+}
+
+void WindowManager::UnFrame(Window w) {
+  const Window frame = clients_[w];
+  XUnmapWindow(display_, frame);
+
+  XReparentWindow(display_, w, root_, 0, 0);
+  // Remove from save set since the window is now unrelated to us
+  XRemoveFromSaveSet(display_, w);
+  XDestroyWindow(display_, frame);
+
+  clients_.erase(w);
+
+  LOG(INFO) << "Unframed window" << w << " [" << frame << "]";
+}
+int WindowManager::onWmDetected(Display *display, XErrorEvent *e) {
+  // If we have an already running wm, the error code from XselectInput is
+  // BadAccess. We do not expect this handler to receive any other errors.
+  CHECK_EQ(static_cast<int>(e->error_code), BadAccess);
+
+  wm_detected_ = true;
+  return 0;
+}
+int WindowManager::OnXError(Display *display, XErrorEvent *e) {}
