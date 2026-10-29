@@ -94,7 +94,7 @@ void WindowManager::Run() {
       break;
     case ConfigureRequest:
       OnConfigureRequest(e.xconfigurerequest);
-
+      break;
     default:
       LOG(WARNING) << "Ignored event" << window_utils::ToString(e);
     }
@@ -245,4 +245,10 @@ int WindowManager::onWmDetected(Display *display, XErrorEvent *e) {
   wm_detected_ = true;
   return 0;
 }
-int WindowManager::OnXError(Display *display, XErrorEvent *e) {}
+int WindowManager::OnXError(Display *display, XErrorEvent *e) {
+
+  LOG(ERROR) << "X11 error was encountered. Error code: " << e->error_code
+             << "Request code: " << e->request_code;
+
+  return 0;
+}
