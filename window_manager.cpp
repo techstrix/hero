@@ -5,6 +5,8 @@
 #include <glog/logging.h>
 #include <memory>
 
+bool WindowManager::wm_detected_;
+
 std::unique_ptr<WindowManager> WindowManager::Create() {
 
   Display *display = XOpenDisplay(nullptr);
@@ -37,6 +39,28 @@ void WindowManager::Run() {
     return;
   }
   XSetErrorHandler(&WindowManager::OnXError);
+
+  // Grab the  X server to prevent windows from changing under us while framing
+  XGrabServer(display_);
+  Window returned_root, returned_parent;
+
+  Window *top_level_windows;
+
+  unsigned int num_top_level_windows;
+  CHECK(XQueryTree(display_, root_, &returned_root, &returned_parent,
+                   &top_level_windows, &num_top_level_windows));
+  CHECK_EQ(returned_root, root_);
+
+  for (unsigned int i = 0; i < num_top_level_windows; i++) {
+    // True here means that the window was created before window manager
+    Frame(top_level_windows[i], true);
+  }
+
+  // Free the top level window array
+  XFree(top_level_windows);
+
+  // Ungrab the x server
+  XUngrabServer(display_);
 
   // Main  event loop
   for (;;) {
@@ -78,6 +102,7 @@ void WindowManager::Run() {
 }
 void WindowManager::OnCreateNotify(const XCreateWindowEvent &e) {}
 void WindowManager::OnConfigureNotify(const XConfigureEvent &e) {}
+void WindowManager::OnReparentNotify(const XReparentEvent &e) {}
 void WindowManager::OnUnmapNotify(const XUnmapEvent &e) {
   // Check if window is client window we manage so that we can unframe it upon
   // unmap notify. We will receive an unmap notify request for a client window
@@ -87,8 +112,23 @@ void WindowManager::OnUnmapNotify(const XUnmapEvent &e) {
     return;
   }
 
+  // ignore this event if it was triggered by reparenting a window that was
+  // mapped before the  window manager started. the event arg of  a window we
+  // maintain should be set to a frame window we maintain. Only an unmap notify
+  // event triggered by reparenting a pre-existing will have this attribute set
+  // to the root window.
+
+  if (e.event == root_) {
+    LOG(INFO) << "Ignoring unmap notify for reparenting pre-existing window "
+              << e.window;
+
+    return;
+  }
+
   UnFrame(e.window);
 }
+
+void WindowManager::OnDestroyNotify(const XDestroyWindowEvent &e) {}
 
 void WindowManager::OnConfigureRequest(const XConfigureRequestEvent &e) {
 
@@ -116,11 +156,11 @@ void WindowManager::OnConfigureRequest(const XConfigureRequestEvent &e) {
 }
 
 void WindowManager::OnMapRequest(const XMapRequestEvent &e) {
-  Frame(e.window);
+  Frame(e.window, false);
 
   XMapWindow(display_, e.window);
 }
-void WindowManager::Frame(Window w) {
+void WindowManager::Frame(Window w, bool was_created_before_window_manager) {
   const unsigned int BORDER_WIDTH = 4;
   const unsigned long BORDER_COLOR = 0xff0000;
   const unsigned int BG_COLOR = 0x0000ff;
@@ -128,6 +168,16 @@ void WindowManager::Frame(Window w) {
 
   XWindowAttributes x_window_attrs;
   CHECK(XGetWindowAttributes(display_, w, &x_window_attrs));
+
+  // If window existed before our wm started we should frame it only if it is
+  // visible and doesnt set override redirect
+
+  if (was_created_before_window_manager) {
+    if (x_window_attrs.override_redirect ||
+        x_window_attrs.map_state != IsViewable) {
+      return;
+    }
+  }
 
   // Frame creation
 

@@ -36,7 +36,7 @@ private:
   void OnReparentNotify(const XReparentEvent &e);
   void OnDestroyNotify(const XDestroyWindowEvent &e);
   // Helper functions
-  void Frame(Window w);
+  void Frame(Window w, bool was_created_before_window_manager);
   void UnFrame(Window w); // Xlib error handler. Must be static as its address
                           // is passed to xlib
   static int OnXError(Display *display, XErrorEvent *e);
