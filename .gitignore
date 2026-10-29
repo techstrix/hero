@@ -1,7 +1,7 @@
 *.o
 
 hero
-
+main
 # Libraries
 *.a
 *.so
