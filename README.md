@@ -92,9 +92,3 @@ Wayland compositor is available, so it falls back to X11 and connects to
 ```sh
 GLOG_logtostderr=1 DISPLAY=:1 ./hero
 ```
-
-### Notes
-
-- `hero` refuses to start if another window manager already owns the display.
-- Clients are added to the X save set, so they are kept alive if `hero`
-  terminates unexpectedly.
