@@ -6,6 +6,7 @@
 
 int main(int argc, char **argv) {
   google::InitGoogleLogging(argv[0]);
+  FLAGS_logtostderr = true;
   std::unique_ptr<WindowManager> window_manager(WindowManager::Create());
 
   if (!window_manager) {

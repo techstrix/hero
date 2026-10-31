@@ -100,21 +100,21 @@ Position<T> operator-(const Position<T> &a, const Vector2D<T> &v) {
 
 template <typename T>
 Vector2D<T> operator-(const Size<T> &a, const Size<T> &b) {
-  return Vector2D<T>(a.x - b.x, a.y - b.y);
+  return Vector2D<T>(a.width - b.width, a.height - b.height);
 }
 template <typename T>
 Size<T> operator+(const Size<T> &a, const Vector2D<T> &v) {
-  return Size<T>(a.x + v.x, a.y + v.y);
+  return Size<T>(a.width + v.x, a.height + v.y);
 }
 
 template <typename T>
 Size<T> operator+(const Vector2D<T> &v, const Size<T> &a) {
-  return Size<T>(a.x + v.x, a.y + v.y);
+  return Size<T>(a.width + v.x, a.height + v.y);
 }
 
 template <typename T>
 Size<T> operator-(const Size<T> &a, const Vector2D<T> &v) {
-  return Size<T>(a.x - v.x, a.y - v.y);
+  return Size<T>(a.width - v.x, a.height - v.y);
 }
 
 } // namespace window_utils

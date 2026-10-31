@@ -2,9 +2,11 @@
 #include "event_utils.hpp"
 #include <X11/X.h>
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <algorithm>
+#include <cstring>
 #include <glog/logging.h>
 #include <memory>
-
 bool WindowManager::wm_detected_;
 
 std::unique_ptr<WindowManager> WindowManager::Create() {
@@ -19,8 +21,11 @@ std::unique_ptr<WindowManager> WindowManager::Create() {
 }
 
 WindowManager::WindowManager(Display *display)
-    : display_(display), root_(DefaultRootWindow(display_)) {}
+    : display_(display), root_(DefaultRootWindow(display_)),
+      WM_PROTOCOLS(XInternAtom(display_, "WM_PROTOCOLS", false)),
+      WM_DELETE_WINDOW(XInternAtom(display_, "WM_DELETE_WINDOW", false))
 
+{}
 WindowManager::~WindowManager() { XCloseDisplay(display_); }
 
 void WindowManager::Run() {
@@ -126,6 +131,8 @@ void WindowManager::Run() {
     }
   }
 }
+
+void WindowManager::OnKeyRelease(const XKeyEvent &e) {}
 void WindowManager::OnCreateNotify(const XCreateWindowEvent &e) {}
 void WindowManager::OnConfigureNotify(const XConfigureEvent &e) {}
 void WindowManager::OnReparentNotify(const XReparentEvent &e) {}
@@ -187,6 +194,56 @@ void WindowManager::OnMapRequest(const XMapRequestEvent &e) {
   XMapWindow(display_, e.window);
 }
 
+void WindowManager::OnKeyPress(const XKeyEvent &e) {
+  if ((e.state & Mod1Mask) &&
+      (e.keycode == XKeysymToKeycode(display_, XK_F4))) {
+    // First send WM_PROTOCOLS and WM_DELETE_WINDOW. If client is not marked for
+    // this -> XKillClient() from XSetWMProtocols
+    Atom *supported_protocols;
+    int num_supported_protocols;
+
+    if (XGetWMProtocols(display_, e.window, &supported_protocols,
+                        &num_supported_protocols) &&
+        (std::find(supported_protocols,
+                   supported_protocols + num_supported_protocols,
+                   WM_DELETE_WINDOW) !=
+         supported_protocols + num_supported_protocols)) {
+      XFree(supported_protocols);
+      LOG(INFO) << "Gracefully deleting window" << e.window;
+      // Construct message
+      XEvent msg;
+
+      memset(&msg, 0, sizeof(msg));
+      msg.xclient.type = ClientMessage;
+      msg.xclient.message_type = WM_PROTOCOLS;
+      msg.xclient.window = e.window;
+      msg.xclient.format = 32;
+      msg.xclient.data.l[0] = WM_DELETE_WINDOW;
+
+      // Send the message to the window to be closed
+      CHECK(XSendEvent(display_, e.window, false, 0, &msg));
+
+    } else {
+
+      LOG(INFO) << "Killing window" << e.window;
+      XKillClient(display_, e.window);
+    }
+  } else if ((e.state & Mod1Mask) &&
+             (e.keycode == XKeysymToKeycode(display_, XK_Tab))) {
+
+    // Alt tab switch window
+    auto i = clients_.find(e.window);
+    CHECK(i != clients_.end());
+    ++i;
+    if (i == clients_.end()) {
+      i = clients_.begin();
+    }
+    // Raise and set focus
+    XRaiseWindow(display_, i->second);
+    XSetInputFocus(display_, i->first, RevertToPointerRoot, CurrentTime);
+  }
+}
+
 void WindowManager::OnButtonPress(const XButtonEvent &e) {
   CHECK(clients_.count(e.window));
   const Window frame = clients_[e.window];
@@ -198,6 +255,7 @@ void WindowManager::OnButtonPress(const XButtonEvent &e) {
   int x, y;
   unsigned int width, height, border_width, depth;
   CHECK(XGetGeometry(display_, frame, &returned_root, &x, &y, &width, &height,
+
                      &border_width, &depth));
 
   drag_start_frame_position_ = window_utils::Position<int>(x, y);
@@ -207,7 +265,41 @@ void WindowManager::OnButtonPress(const XButtonEvent &e) {
 
   XRaiseWindow(display_, frame);
 }
+void WindowManager::OnMotionNotify(const XMotionEvent &e) {
+  // If this chekc fails for any reason we wont form the frame and will
+  // immediately stop and crash.
+  CHECK(clients_.count(e.window));
+  const Window frame = clients_[e.window];
+  const window_utils::Position<int> drag_position(e.x_root, e.y_root);
+  const window_utils::Vector2D<int> delta =
+      drag_position - drag_start_position_;
+  if (e.state & Button1Mask) {
+    // Alt + left button move window
+    const window_utils::Position<int> dest_frame_position =
+        drag_start_frame_position_ + delta;
+    XMoveWindow(display_, frame, dest_frame_position.x, dest_frame_position.y);
+  } else if (e.state & Button3Mask) {
+    // alt + right: Resize window
 
+    // Window dimensions cannot be negative
+
+    const window_utils::Vector2D<int> size_delta(
+        std::max(delta.x, -drag_start_frame_size_.width),
+        std::max(delta.y, -drag_start_frame_size_.height));
+
+    const window_utils::Size<int> dest_frame_size =
+        drag_start_frame_size_ + size_delta;
+
+    // Resize frame
+    XResizeWindow(display_, frame, dest_frame_size.width,
+                  dest_frame_size.height);
+    // Resize client window
+    XResizeWindow(display_, e.window, dest_frame_size.width,
+                  dest_frame_size.height);
+  }
+}
+
+void WindowManager::OnButtonRelease(const XButtonEvent &e) {}
 void WindowManager::Frame(Window w, bool was_created_before_window_manager) {
   const unsigned int BORDER_WIDTH = 4;
   const unsigned long BORDER_COLOR = 0xff0000;

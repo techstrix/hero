@@ -39,8 +39,8 @@ private:
   void OnButtonPress(const XButtonEvent &e);
   void OnButtonRelease(const XButtonEvent &e);
   void OnMotionNotify(const XMotionEvent &e);
-  void OnKeyPress(const XKeyPressedEvent &e);
-  void OnKeyRelease(const XKeyReleasedEvent &e);
+  void OnKeyPress(const XKeyEvent &e);
+  void OnKeyRelease(const XKeyEvent &e);
 
   // Helper functions
   void Frame(Window w, bool was_created_before_window_manager);
@@ -62,4 +62,7 @@ private:
 
   // The size of the affected window at the start of a move or resize
   window_utils::Size<int> drag_start_frame_size_;
+
+  const Atom WM_PROTOCOLS;
+  const Atom WM_DELETE_WINDOW;
 };
