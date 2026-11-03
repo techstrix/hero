@@ -149,3 +149,56 @@ Wayland compositor is available, so it falls back to X11 and connects to
 ```sh
 GLOG_logtostderr=1 DISPLAY=:1 ./hero
 ```
+Incase you would like to run this as your main wm (with caution) always have a background wm to fall back to follow these steps:
+1. Create an ~/.xinitrc file and populate it with
+```
+
+#!/bin/sh
+
+# Launch a fallback terminal in case Hero crashes
+xterm &
+
+# Start the Hero window manager
+exec hero
+
+
+
+
+```
+Save this file 
+
+
+### 1. Create a Hero session file
+Create a file called:
+
+hero.desktop
+
+The usual location for an X11 window manager session is:
+
+/usr/share/xsessions/hero.desktop
+
+### 2. Put the following inside it:
+```
+
+[Desktop Entry]
+Name=Hero
+Comment=Hero Window Manager
+Exec=sh -c 'xterm & exec hero'
+TryExec=hero
+Type=Application
+DesktopNames=Hero
+
+```
+
+If hero isn't installed in a directory on your $PATH, replace both Exec and TryExec with its absolute executable path, for example:
+```
+Exec=/home/youruser/hero/build/hero
+TryExec=/home/youruser/hero/build/hero
+```
+Make sure the executable is accessible to your user.
+
+### 3. Select Hero from the login screen
+1. Log out of your current desktop session.
+2. At the login screen, look for the session selector (often a gear icon or menu).
+3. Select Hero.
+4. Log in.
