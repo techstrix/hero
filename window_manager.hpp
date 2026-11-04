@@ -1,4 +1,6 @@
+#pragma once
 #include "event_utils.hpp"
+#include "luconfig.hpp"
 #include <X11/X.h>
 #include <X11/keysym.h>
 #include <unordered_map>
@@ -12,6 +14,7 @@ public:
   // Establish connection  to x server and create a window manager instance
   static std::unique_ptr<WindowManager> Create();
 
+  bool SetWallpaper(const std::string &image_path);
   ~WindowManager();
   void Run();
 
@@ -44,7 +47,6 @@ private:
 
   // Helper functions
   void Frame(Window w, bool was_created_before_window_manager);
-  bool SetWallpaper(const std::string &image_path);
   void InitLua();
   void UnFrame(Window w); // Xlib error handler. Must be static as its address
                           // is passed to xlib
@@ -64,7 +66,8 @@ private:
 
   // The size of the affected window at the start of a move or resize
   window_utils::Size<int> drag_start_frame_size_;
-
   const Atom WM_PROTOCOLS;
   const Atom WM_DELETE_WINDOW;
+  // As a member variable in WindowManager class:
+  std::unique_ptr<Hero::LuConfig> config_;
 };

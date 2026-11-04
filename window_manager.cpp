@@ -32,20 +32,13 @@ WindowManager::WindowManager(Display *display)
       WM_PROTOCOLS(XInternAtom(display_, "WM_PROTOCOLS", false)),
       WM_DELETE_WINDOW(XInternAtom(display_, "WM_DELETE_WINDOW", false))
 
-{}
+{
+
+  config_ = std::make_unique<Hero::LuConfig>(this);
+}
 WindowManager::~WindowManager() { XCloseDisplay(display_); }
 
-void WindowManager::InitLua() {
-  sol::state lua;
-  lua.open_libraries(sol::lib::base, sol::lib::io, sol::lib::os);
-  lua.set_function("set_wallpaper", [this](const std::string &image_path) {
-    return this->SetWallpaper(image_path);
-  });
-  sol::optional<sol::error> result = lua.script_file("./rc.lua");
-  if (!result) {
-    LOG(ERROR) << "Error in lua configuration";
-  }
-}
+void WindowManager::InitLua() { config_->LoadConfig(); }
 bool WindowManager::SetWallpaper(const std::string &image_path) {
   int width, height, channels;
 
@@ -319,6 +312,12 @@ void WindowManager::OnKeyPress(const XKeyEvent &e) {
     // Raise and set focus
     XRaiseWindow(display_, i->second);
     XSetInputFocus(display_, i->first, RevertToPointerRoot, CurrentTime);
+
+  } else if ((e.state & Mod4Mask) && (e.state & ShiftMask) &&
+             (e.keycode == XKeysymToKeycode(display_, XK_r))) {
+
+    // Call your config reload function here!
+    config_->LoadConfig();
   }
 }
 
@@ -439,6 +438,15 @@ void WindowManager::Frame(Window w, bool was_created_before_window_manager) {
   XGrabKey(display_, XKeysymToKeycode(display_, XK_Tab), Mod1Mask, w, false,
            GrabModeAsync, GrabModeAsync);
 
+  KeyCode r_code = XKeysymToKeycode(display_, XStringToKeysym("r"));
+
+  // Mod4Mask is typically the Super / Windows key
+  // ControlMask | ShiftMask can also be added for modifiers
+  unsigned int modifiers = Mod4Mask | ShiftMask;
+
+  // Grab the key globally on the root window
+  XGrabKey(display_, r_code, modifiers, root_, True, GrabModeAsync,
+           GrabModeAsync);
   LOG(INFO) << "Framed window " << w << " [" << frame << "]";
 }
 
